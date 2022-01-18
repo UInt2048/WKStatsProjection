@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.1.0
+// @version      1.1.1
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/progress/projections
@@ -15,7 +15,7 @@
     'use strict';
     window.wkof.include('ItemData, Apiv2');
 
-    var maxLevel = null, progressions = [], current = null, time = [0];
+    var maxLevel = null, progressions = [], current = null, stats = null;
 
     function addGlobalStyle(css) {
         var head, style;
@@ -32,6 +32,11 @@
         window.project(null);
     }
 
+    window.setCurrent = () => {
+        history.pushState({}, null, '#L' + current.level);
+        window.project(null);
+    }
+
     window.project = speed => {
         Date.prototype.add = function(seconds) {
             this.setTime(this.getTime() + (seconds*1000));
@@ -42,7 +47,13 @@
             return this.getTime() / 1000;
         }
         Date.prototype.format = function() {
-            return new Intl.DateTimeFormat([], { dateStyle: 'medium', timeStyle: 'medium' }).format(this);
+            try {
+                return new Intl.DateTimeFormat([], { dateStyle: 'medium', timeStyle: 'medium' }).format(this);
+            } catch (e) {
+                if (e instanceof RangeError) {
+                    return Infinity;
+                } else throw e;
+            }
         }
         Array.prototype.median = function() {
             const mid = Math.floor(this.length / 2);
@@ -54,18 +65,21 @@
         var levelDuration = (level => new Date(level.passed_at ? level.passed_at : level.abandoned_at).subtractDate(new Date(level.unlocked_at)));
 
         const median = progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1).median();
-
-        // TODO: Use https://github.com/storyyeller/wkbuddy to dynamically obtain this list
-        const fastLevels = [43, 44, 46, 47, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60];
-
-        const fastLevelFastest = (3 * 24 + 10) * 60 * 60;
-        const slowLevelFastest = 2 * fastLevelFastest;
         const hypotheticalSpeed = (speed || 240) * 60 * 60;
-
         const hidePast = document.URL.includes('#hidePast');
 
+        const expandedLevel = parseInt(document.URL.includes('#L') && document.URL.split('#L')[1]);
+
+        var time = [0];
+
+        for (let i = 1; i < stats.length; i++) {
+            stats[i].sort( ($0, $1) => $0[0] > $1[0]);
+            var trimmed = stats[i].slice(0, Math.ceil(stats[i].length * 0.9));
+            time.push(trimmed[trimmed.length - 1][0]);
+        }
+
         if (levels[levels.length - 1] < maxLevel) {
-            for (var i = levels[levels.length - 1] + 1; i <= maxLevel; i++) {
+            for (let i = levels[levels.length - 1] + 1; i <= maxLevel; i++) {
                 levels.push(i);
                 progressions.push({level: i});
             }
@@ -77,13 +91,21 @@
         var output = `<label for="speed">Hypothetical Speed (in hours):</label><input type="number" id="speed" value="240">
         <button onclick="project(document.getElementById('speed').value);">Project</button><br/>
         <button id="past" onclick="setHidePast();">Toggle Past Levels</button><br/>
-        <table class="coverage"><tbody><tr class="header"><td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td></tr>`;
+        <button onclick="setCurrent();">Show Current Level</button><br/>
+        <table class="coverage"><tbody><tr class="header"> ${expandedLevel ? `<td>Kanji</td><td colspan=3>Fastest</td>` : `<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>`}</tr>`;
 
         var d = new Date(), d1 = null, d2 = null, d3 = null, currentReached = false;
         for (var level of progressions) {
             var s = "";
             if (level === current) currentReached = true;
             if (hidePast && !currentReached) continue;
+
+            if (expandedLevel) {
+                for (let item of stats[expandedLevel]) {
+                    output += `<tr><td>${item[1]}</td><td colspan=3>${(new Date(d)).add(item[0]).format()}</tr>`;
+                }
+                break;
+            }
 
             if (level.unlocked_at) {
                 d = new Date(level.unlocked_at);
@@ -101,7 +123,9 @@
                 s += `<td> ${d1.format()} </td><td> ${d2.format()} </td><td> ${d3.format()} </td>`;
             }
 
-            output += `<tr ${level === current ? "class='current_level'" : ""}><td> ${String("0" + level.level).slice(-2)} </td> ${s} </tr>`;
+            if (!expandedLevel) {
+                output += `<tr ${level === current ? "class='current_level'" : ""}><td> ${String("0" + level.level).slice(-2)} </td> ${s} </tr>`;
+            }
         }; // level progressions
 
         output += "</tbody></table>";
@@ -152,14 +176,10 @@
             return this.length % 2 !== 0 ? this[mid] : (this[mid - 1] + this[mid]) / 2;
         }
 
-        console.log(items);
-
-        var stats = Array.from(Array(maxLevel + 1), () => []);
         const date = new Date();
         var getLength = item => {
             if (!item.assignments || !item.assignments.passed_at) {
-                var interval = item.assignments && item.assignments.available_at ? (new Date(item.assignments.available_at)).subtractDate(date) : 0;
-                interval = Math.max(0, interval);
+                var interval = item.assignments && item.assignments.available_at ? Math.max(0, (new Date(item.assignments.available_at)).subtractDate(date)) : 0;
                 const system = systems[item.data.spaced_repetition_system_id];
                 const passingStage = system.data.passing_stage_position;
                 for (var stage = (item.assignments ? item.assignments.srs_stage : -1) + 1; stage < passingStage; stage++) {
@@ -169,6 +189,8 @@
             }
             return 0;
         };
+
+        stats = Array.from(Array(maxLevel + 1), () => []);
         for (var item of items) {
             if (item.data.hidden_at || item.object !== "kanji") continue;
             const level = item.data.level;
@@ -177,13 +199,7 @@
                 return radical.data.level === level ? getLength(radical) : 0;
             });
             const length = radicals.reduce((a, b) => Math.max(a, b)) + getLength(item);
-            stats[item.data.level].push(length);
-        }
-
-        for (var i = 1; i < stats.length; i++) {
-            stats[i].sort( ($0, $1) => $0 > $1);
-            var trimmed = stats[i].slice(0, Math.ceil(stats[i].length * 0.9));
-            time.push(trimmed[trimmed.length - 1]);
+            stats[item.data.level].push([length, item.data.characters]);
         }
 
         window.project(null);
