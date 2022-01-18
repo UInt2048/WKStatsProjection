@@ -3,7 +3,7 @@
 // @version      1.1.1
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
-// @include      https://www.wkstats.com/progress/projections
+// @include      https://www.wkstats.com/*
 // @run-at       document-end
 // @grant        none
 // @namespace https://greasyfork.org/users/684166
@@ -55,16 +55,16 @@
                 } else throw e;
             }
         }
-        Array.prototype.median = function() {
-            const mid = Math.floor(this.length / 2);
-            return this.length % 2 !== 0 ? this[mid] : (this[mid - 1] + this[mid]) / 2;
+        function array_median(arr) {
+            const mid = Math.floor(arr.length / 2);
+            return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
         }
 
         var levels = progressions.map($0 => $0.level);
 
         var levelDuration = (level => new Date(level.passed_at ? level.passed_at : level.abandoned_at).subtractDate(new Date(level.unlocked_at)));
 
-        const median = progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1).median();
+        const median = array_median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1));
         const hypotheticalSpeed = (speed || 240) * 60 * 60;
         const hidePast = document.URL.includes('#hidePast');
 
@@ -168,12 +168,12 @@
             this.setTime(this.getTime() - date.getTime());
             return this.getTime() / 1000;
         }
-        Array.prototype.findID = function(id) {
-            return this.find(o => o.id === id);
+        function array_findid(arr, id) {
+            return arr.find(o => o.id === id);
         }
-        Array.prototype.median = function() {
-            const mid = Math.floor(this.length / 2);
-            return this.length % 2 !== 0 ? this[mid] : (this[mid - 1] + this[mid]) / 2;
+        function array_median(arr) {
+            const mid = Math.floor(arr.length / 2);
+            return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
         }
 
         const date = new Date();
@@ -195,7 +195,7 @@
             if (item.data.hidden_at || item.object !== "kanji") continue;
             const level = item.data.level;
             const radicals = item.data.component_subject_ids.map(id => {
-                const radical = items.findID(id);
+                const radical = array_findid(items, id);
                 return radical.data.level === level ? getLength(radical) : 0;
             });
             const length = radicals.reduce((a, b) => Math.max(a, b)) + getLength(item);
@@ -211,7 +211,16 @@
                 window.wkof.Apiv2.get_endpoint('level_progressions').then(progressions => {
                     window.wkof.Apiv2.get_endpoint('spaced_repetition_systems').then(systems => {
                         window.wkof.ItemData.get_items('subjects, assignments').then(items => {
-                            window.handleAPI(userData, progressions, systems, items);
+                            function entered_progression_page() {
+                                window.handleAPI(userData, progressions, systems, items);
+                            }
+
+                            //Enable callback when we enter the progression page
+                            window.wkof.on('wkstats.projections.loaded', entered_progression_page);
+                            //Manually check if the initial page was the progression page, in which case the callback doesn't fire
+                            if(window.location.href == 'https://www.wkstats.com/progress/projections') {
+                                entered_progression_page();
+                            }
                         });
                     });
                 });
