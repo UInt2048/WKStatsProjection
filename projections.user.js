@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.1.2
+// @version      1.1.3
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -64,7 +64,7 @@
 
         var levelDuration = (level => new Date(level.passed_at ? level.passed_at : level.abandoned_at).subtractDate(new Date(level.unlocked_at)));
 
-        const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1));
+        const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 - $1));
         const hypotheticalSpeed = (speed || 240) * 60 * 60;
         const hidePast = document.URL.includes('#hidePast');
 
@@ -73,7 +73,7 @@
         var time = [0];
 
         for (let i = 1; i < stats.length; i++) {
-            stats[i].sort( ($0, $1) => $0[0] > $1[0]);
+            stats[i].sort( ($0, $1) => $0[0] - $1[0]);
             var trimmed = stats[i].slice(0, Math.ceil(stats[i].length * 0.9));
             time.push(trimmed[trimmed.length - 1][0]);
         }
@@ -203,21 +203,19 @@
 
     window.wkof.ready('ItemData, Apiv2').then(() => {
         window.wkof.Apiv2.get_endpoint('user').then(userData => {
-            window.wkof.Apiv2.get_endpoint('level_progressions').then(levels => {
-                window.wkof.Apiv2.get_endpoint('level_progressions').then(progressions => {
-                    window.wkof.Apiv2.get_endpoint('spaced_repetition_systems').then(systems => {
-                        window.wkof.ItemData.get_items('subjects, assignments').then(items => {
-                            function entered_progression_page() {
-                                window.handleAPI(userData, progressions, systems, items);
-                            }
+            window.wkof.Apiv2.get_endpoint('level_progressions').then(progressions => {
+                window.wkof.Apiv2.get_endpoint('spaced_repetition_systems').then(systems => {
+                    window.wkof.ItemData.get_items('subjects, assignments').then(items => {
+                        function entered_progression_page() {
+                            window.handleAPI(userData, progressions, systems, items);
+                        }
 
-                            //Enable callback when we enter the progression page
-                            window.wkof.on('wkstats.projections.loaded', entered_progression_page);
-                            //Manually check if the initial page was the progression page, in which case the callback doesn't fire
-                            if(window.location.href == 'https://www.wkstats.com/progress/projections') {
-                                entered_progression_page();
-                            }
-                        });
+                        //Enable callback when we enter the progression page
+                        window.wkof.on('wkstats.projections.loaded', entered_progression_page);
+                        //Manually check if the initial page was the progression page, in which case the callback doesn't fire
+                        if(window.location.href == 'https://www.wkstats.com/progress/projections') {
+                            entered_progression_page();
+                        }
                     });
                 });
             });
