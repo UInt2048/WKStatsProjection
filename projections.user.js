@@ -64,7 +64,7 @@
 
         var levelDuration = (level => new Date(level.passed_at ? level.passed_at : level.abandoned_at).subtractDate(new Date(level.unlocked_at)));
 
-        const median = median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1));
+        const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1));
         const hypotheticalSpeed = (speed || 240) * 60 * 60;
         const hidePast = document.URL.includes('#hidePast');
 
@@ -116,7 +116,7 @@
                     d2 = new Date();
                     d3 = new Date(d);
                 }
-                d1.add(median);
+                d1.add(medianSpeed);
                 d2.add(time[level.level - 1]);
                 d3.add(hypotheticalSpeed);
 
