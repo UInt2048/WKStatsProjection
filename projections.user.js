@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.1.1
+// @version      1.1.2
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -55,7 +55,7 @@
                 } else throw e;
             }
         }
-        function array_median(arr) {
+        function median(arr) {
             const mid = Math.floor(arr.length / 2);
             return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
         }
@@ -64,7 +64,7 @@
 
         var levelDuration = (level => new Date(level.passed_at ? level.passed_at : level.abandoned_at).subtractDate(new Date(level.unlocked_at)));
 
-        const median = array_median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1));
+        const median = median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 > $1));
         const hypotheticalSpeed = (speed || 240) * 60 * 60;
         const hidePast = document.URL.includes('#hidePast');
 
@@ -168,12 +168,8 @@
             this.setTime(this.getTime() - date.getTime());
             return this.getTime() / 1000;
         }
-        function array_findid(arr, id) {
+        function findID(arr, id) {
             return arr.find(o => o.id === id);
-        }
-        function array_median(arr) {
-            const mid = Math.floor(arr.length / 2);
-            return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
         }
 
         const date = new Date();
@@ -195,7 +191,7 @@
             if (item.data.hidden_at || item.object !== "kanji") continue;
             const level = item.data.level;
             const radicals = item.data.component_subject_ids.map(id => {
-                const radical = array_findid(items, id);
+                const radical = findID(items, id);
                 return radical.data.level === level ? getLength(radical) : 0;
             });
             const length = radicals.reduce((a, b) => Math.max(a, b)) + getLength(item);
