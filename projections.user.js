@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.1.3
+// @version      1.1.4
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -119,6 +119,10 @@
                 d1.add(medianSpeed);
                 d2.add(time[level.level - 1]);
                 d3.add(hypotheticalSpeed);
+
+                // Ensure projections are not before fastest possible
+                d1 = new Date(Math.max(d1, d2));
+                d3 = new Date(Math.max(d3, d2));
 
                 s += `<td> ${d1.format()} </td><td> ${d2.format()} </td><td> ${d3.format()} </td>`;
             }
