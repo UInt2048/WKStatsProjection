@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.2.0
+// @version      1.2.1
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -85,7 +85,7 @@
         let time = [0];
 
         for (const data of stats.slice(1)) {
-            time.push(data.sort(($0, $1) => $0[0] - $1[0])[Math.ceil(data.length * 0.9)][0]);
+            time.push(data.sort(($0, $1) => $0[0] - $1[0])[Math.ceil(data.length * 0.9) - 1][0]);
         }
 
         if (levels[levels.length - 1] < maxLevel) {
