@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.2.1
+// @version      1.2.2
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -16,7 +16,7 @@
     "use strict";
     window.wkof.include("ItemData, Apiv2");
 
-    let maxLevel = null, progression = [], current = null, stats = null, now = null;
+    let maxLevel = null, progressions = [], stats = null, now = null;
 
     const addGlobalStyle = function addGlobalStyle() {
         const head = document.getElementsByTagName("head")[0], css = `
@@ -59,44 +59,45 @@
         return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
     }
 
-    const levelDuration = function(lvl) {
-        return new Date(lvl.passed_at ? lvl.passed_at : lvl.abandoned_at).subtractDate(new Date(lvl.unlocked_at));
+    const countRadical = function(radicalLevel, kanjiLevel) {
+        // For kanji in future levels, don't count passing time for radicals on preceding levels
+        return !(kanjiLevel > progressions[progressions.length - 1].level && radicalLevel < kanjiLevel);
+    };
+
+    const levelDuration = function(level) {
+        return new Date(level.passed_at || level.abandoned_at).subtractDate(new Date(level.unlocked_at));
+    }
+
+    const getLater = function(a, b) {
+        return new Date(Math.max(a, b));
     }
 
     Date.prototype.add = function(seconds) {
-        this.setTime(this.getTime() + (seconds*1000));
-        return this;
+        return this.setTime(this.getTime() + (seconds*1000)) && this;
     }
     Date.prototype.subtractDate = function(date) {
-        this.setTime(this.getTime() - date.getTime());
-        return this.getTime() / 1000;
+        return (this.getTime() - date.getTime()) / 1000;
     }
     Date.prototype.format = function() {
         return new window.Intl.DateTimeFormat([], { dateStyle: "medium", timeStyle: "medium" }).format(this);
     }
 
     const project = function project() {
-        const progressions = progression.slice();
-        const levels = progressions.map($0 => $0.level);
-        const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort( ($0, $1) => $0 - $1));
+        const levels = progressions.slice();
+        const current = levels[levels.length - 1];
+        const medianSpeed = median(levels.slice(0, -1).map(levelDuration).sort((a, b) => a - b));
         const hypotheticalSpeed = (document.getElementById("speed")?.value || 240) * 60 * 60;
         const hidePast = document.URL.includes("#hidePast");
+        const time = stats.map(d => d.length && d.sort((a, b) => a[0] - b[0])[Math.ceil(d.length * 0.9) - 1][0]);
 
-        let time = [0];
-
-        for (const data of stats.slice(1)) {
-            time.push(data.sort(($0, $1) => $0[0] - $1[0])[Math.ceil(data.length * 0.9) - 1][0]);
-        }
-
-        if (levels[levels.length - 1] < maxLevel) {
-            for (let i = levels[levels.length - 1] + 1; i <= maxLevel; i++) {
-                levels.push(i);
-                progressions.push({level: i});
+        if (current.level < maxLevel) {
+            for (let i = current.level + 1; i <= maxLevel; i++) {
+                levels.push({level: i});
             }
         }
 
         const expanded = parseInt(document.URL.includes("#L") && document.URL.split("#L")[1]);
-        const expandedLevel = expanded && progressions.slice().reverse().find($0 => expanded == $0.level);
+        const expandedLevel = expanded && levels.slice().reverse().find(p => expanded == p.level);
 
         let output = `<label for="speed">Hypothetical Speed (in hours):</label>
             <input type="number" id="speed" value="240"><span id="buttons"><button id="project">Project</button><br/>
@@ -108,36 +109,27 @@
             "<td>Kanji</td><td colspan=3>Fastest</td>" :
         "<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>"}</tr>`;
 
-        let d = new Date(now), d1 = null, d2 = null, d3 = null, currentReached = false;
-        for (const level of progressions) {
+        let unlocked = new Date(now), real = null, fastest = null, given = null, currentReached = false;
+        for (const level of levels) {
             let s = "";
             if (level === current) currentReached = true;
             if (hidePast && !currentReached) continue;
 
             if (level.unlocked_at) {
-                d = new Date(level.unlocked_at);
-                s += `<td> ${d.format()} </td><td> - </td><td> - </td>`;
+                unlocked = new Date(level.unlocked_at);
+                s += `<td> ${unlocked.format()} </td><td> - </td><td> - </td>`;
             } else {
-                if (d1 === null) {
-                    d1 = new Date(d);
-                    d2 = new Date();
-                    d3 = new Date(d);
-                }
-                d1.add(medianSpeed);
-                d2.add(time[level.level - 1]);
-                d3.add(hypotheticalSpeed);
+                fastest = (fastest || new Date(now)).add(time[level.level - 1]);
+                real = getLater((real || new Date(unlocked)).add(medianSpeed), fastest);
+                given = getLater((given || new Date(unlocked)).add(hypotheticalSpeed), fastest);
 
-                // Ensure projections are not before fastest possible
-                d1 = new Date(Math.max(d1, d2));
-                d3 = new Date(Math.max(d3, d2));
-
-                s += `<td> ${d1.format()} </td><td> ${d2.format()} </td><td> ${d3.format()} </td>`;
+                s += `<td> ${real.format()} </td><td> ${fastest.format()} </td><td> ${given.format()} </td>`;
             }
 
             if (expandedLevel === level) {
                 for (const kanji of stats[expanded]) {
-                    const date = (kanji[0] < 0 ? "Passed on " : "") + (new Date(d2 || now)).add(kanji[0]).format();
-                    output += `<tr><td>${kanji[1]}</td><td colspan=3>${date}</tr>`;
+                    const date = (kanji[0] < 0 ? "Passed on " : "") + (new Date(fastest || now)).add(kanji[0]).format();
+                    output += `<tr><td>${kanji[1].data.characters}</td><td colspan=3>${date}</tr>`;
                 }
             } else if (!expanded) {
                 output += `<tr ${level === current ?
@@ -159,22 +151,20 @@
     }
 
     const api = function api(userData, levels, systems, items) {
-        if (progression.length > 0) return project();
+        if (progressions.length > 0) return project();
 
         maxLevel = userData.subscription.max_level_granted;
-        for (const id in levels) {
-            progression.push(levels[id].data);
-        }
-        current = progression[progression.length - 1];
+        progressions = Object.values(levels).map(level => level.data);
         now = new Date();
-        const getLength = function(item) {
+
+        const passTime = function(item) {
             if (!item.assignments || !item.assignments.passed_at) {
-                let interval = item.assignments && item.assignments.available_at ?
+                let interval = item.assignments?.available_at ?
                     Math.max(0, (new Date(item.assignments.available_at)).subtractDate(now)) : 0;
-                const system = systems[item.data.spaced_repetition_system_id];
-                const passing = system.data.passing_stage_position;
-                for (let stage = (item.assignments ? item.assignments.srs_stage : -1) + 1; stage < passing; stage++) {
-                    interval += system.data.stages[stage].interval;
+                const system = systems[item.data.spaced_repetition_system_id].data;
+                const passing = system.passing_stage_position;
+                for (let stage = (item.assignments?.srs_stage || -1) + 1; stage < passing; stage++) {
+                    interval += system.stages[stage].interval;
                 }
                 return interval;
             }
@@ -184,13 +174,12 @@
         stats = Array.from(Array(maxLevel + 1), () => []);
         for (const item of items) {
             if (item.data.hidden_at || item.object !== "kanji") continue;
-            const level = item.data.level;
             const radicals = item.data.component_subject_ids.map(id => {
                 const radical = items.find(o => o.id === id);
-                return radical.data.level === level ? getLength(radical) : 0;
+                return countRadical(radical.data.level, item.data.level) ? Math.max(0, passTime(radical)) : 0;
             });
-            const length = radicals.reduce((a, b) => Math.max(a, b)) + getLength(item);
-            stats[item.data.level].push([length, item.data.characters]);
+            const length = radicals.reduce((a, b) => Math.max(a, b)) + passTime(item);
+            stats[item.data.level].push([length, item]);
         }
 
         project();
