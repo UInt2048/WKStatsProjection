@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.2.2
+// @version      1.2.3
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -83,57 +83,49 @@
     }
 
     const project = function project() {
-        const levels = progressions.slice();
-        const current = levels[levels.length - 1];
-        const medianSpeed = median(levels.slice(0, -1).map(levelDuration).sort((a, b) => a - b));
-        const hypotheticalSpeed = (document.getElementById("speed")?.value || 240) * 60 * 60;
+        const current = progressions[progressions.length - 1];
+        const levels = progressions.slice().concat(Array.from({length: maxLevel - current.level},
+                                                              (_, i) => ({level: current.level + 1 + i})));
+        const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort((a, b) => a - b));
+        const hypotheticalSpeed = (document.getElementById("speed")?.value || 240) * 3600;
         const hidePast = document.URL.includes("#hidePast");
         const time = stats.map(d => d.length && d.sort((a, b) => a[0] - b[0])[Math.ceil(d.length * 0.9) - 1][0]);
-
-        if (current.level < maxLevel) {
-            for (let i = current.level + 1; i <= maxLevel; i++) {
-                levels.push({level: i});
-            }
-        }
-
-        const expanded = parseInt(document.URL.includes("#L") && document.URL.split("#L")[1]);
-        const expandedLevel = expanded && levels.slice().reverse().find(p => expanded == p.level);
+        const expanded = levels.slice().reverse().find(p => parseInt(document.URL.split("#L")[1]) === p.level);
 
         let output = `<label for="speed">Hypothetical Speed (in hours):</label>
-            <input type="number" id="speed" value="240"><span id="buttons"><button id="project">Project</button><br/>
+            <input type="number" id="speed" value="${hypotheticalSpeed / 3600}"><span id="buttons">
+            <button id="project">Project</button><br/>
             <button id="past">Toggle Past Levels</button><br/>
             <label for="speed">Show Details for Level:</label>
-            <input type="number" id="expanded" value="${current.level}">
+            <input type="number" id="expanded" value="${expanded?.level || current.level}">
             <button id="detailed">Show Details</button><br/>
-            </span><table class="coverage"><tbody><tr class="header"> ${expandedLevel ?
+            </span><table class="coverage"><tbody><tr class="header"> ${expanded ?
             "<td>Kanji</td><td colspan=3>Fastest</td>" :
-        "<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>"}</tr>`;
+        "<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>"}</tr>`,
+            unlocked = new Date(now), real = null, fastest = null, given = null, currentReached = false, info = "";
 
-        let unlocked = new Date(now), real = null, fastest = null, given = null, currentReached = false;
         for (const level of levels) {
-            let s = "";
             if (level === current) currentReached = true;
             if (hidePast && !currentReached) continue;
 
             if (level.unlocked_at) {
                 unlocked = new Date(level.unlocked_at);
-                s += `<td> ${unlocked.format()} </td><td> - </td><td> - </td>`;
+                info = `<td> ${unlocked.format()} </td><td> - </td><td> - </td>`;
             } else {
                 fastest = (fastest || new Date(now)).add(time[level.level - 1]);
                 real = getLater((real || new Date(unlocked)).add(medianSpeed), fastest);
                 given = getLater((given || new Date(unlocked)).add(hypotheticalSpeed), fastest);
-
-                s += `<td> ${real.format()} </td><td> ${fastest.format()} </td><td> ${given.format()} </td>`;
+                info = `<td> ${real.format()} </td><td> ${fastest.format()} </td><td> ${given.format()} </td>`;
             }
 
-            if (expandedLevel === level) {
-                for (const kanji of stats[expanded]) {
+            if (!expanded) {
+                output += `<tr ${level === current ?
+                    "class=\"current_level\"" : ""}><td> ${String("0" + level.level).slice(-2)} </td> ${info} </tr>`;
+            } else if (expanded === level) {
+                for (const kanji of stats[expanded.level]) {
                     const date = (kanji[0] < 0 ? "Passed on " : "") + (new Date(fastest || now)).add(kanji[0]).format();
                     output += `<tr><td>${kanji[1].data.characters}</td><td colspan=3>${date}</tr>`;
                 }
-            } else if (!expanded) {
-                output += `<tr ${level === current ?
-                    "class=\"current_level\"" : ""}><td> ${String("0" + level.level).slice(-2)} </td> ${s} </tr>`;
             }
         }
 
@@ -161,10 +153,9 @@
             if (!item.assignments || !item.assignments.passed_at) {
                 let interval = item.assignments?.available_at ?
                     Math.max(0, (new Date(item.assignments.available_at)).subtractDate(now)) : 0;
-                const system = systems[item.data.spaced_repetition_system_id].data;
-                const passing = system.passing_stage_position;
-                for (let stage = (item.assignments?.srs_stage || -1) + 1; stage < passing; stage++) {
-                    interval += system.stages[stage].interval;
+                const srs = systems[item.data.spaced_repetition_system_id].data;
+                for (let stage = (item.assignments?.srs_stage || 0) + 1; stage < srs.passing_stage_position; stage++) {
+                    interval += srs.stages[stage].interval;
                 }
                 return interval;
             }
@@ -174,12 +165,10 @@
         stats = Array.from(Array(maxLevel + 1), () => []);
         for (const item of items) {
             if (item.data.hidden_at || item.object !== "kanji") continue;
-            const radicals = item.data.component_subject_ids.map(id => {
+            stats[item.data.level].push([item.data.component_subject_ids.map(id => {
                 const radical = items.find(o => o.id === id);
                 return countRadical(radical.data.level, item.data.level) ? Math.max(0, passTime(radical)) : 0;
-            });
-            const length = radicals.reduce((a, b) => Math.max(a, b)) + passTime(item);
-            stats[item.data.level].push([length, item]);
+            }).reduce((a, b) => Math.max(a, b)) + passTime(item), item]);
         }
 
         project();
