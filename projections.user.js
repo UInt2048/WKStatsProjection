@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.2.3
+// @version      1.3.0
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -47,21 +47,14 @@
         }
     }
 
-    const set = function set(url, item) {
-        return () => {
-            window.history.pushState({}, null, url + (document.getElementById(item)?.value ?? ""));
-            project();
-        };
-    }
-
     const median = function median(arr) {
         const mid = Math.floor(arr.length / 2);
         return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
     }
 
-    const countRadical = function(radicalLevel, kanjiLevel) {
-        // For kanji in future levels, don't count passing time for radicals on preceding levels
-        return !(kanjiLevel > progressions[progressions.length - 1].level && radicalLevel < kanjiLevel);
+    const countComponent = function(componentLevel, itemLevel) {
+        // For items in future levels, don't count passing time for components on preceding levels
+        return !(itemLevel > progressions[progressions.length - 1].level && componentLevel < itemLevel);
     };
 
     const levelDuration = function(level) {
@@ -72,6 +65,10 @@
         return new Date(Math.max(a, b));
     }
 
+    const getFools = function(date) {
+        return new Date(date.getFullYear() + (date.getMonth() >= 3), 3, 1);
+    }
+
     Date.prototype.add = function(seconds) {
         return this.setTime(this.getTime() + (seconds*1000)) && this;
     }
@@ -79,26 +76,33 @@
         return (this.getTime() - date.getTime()) / 1000;
     }
     Date.prototype.format = function() {
-        return new window.Intl.DateTimeFormat([], { dateStyle: "medium", timeStyle: "medium" }).format(this);
+        return new window.Intl.DateTimeFormat("default", {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: 'numeric', minute: 'numeric', second: 'numeric'}).format(this);
     }
 
     const project = function project() {
         const current = progressions[progressions.length - 1];
-        const levels = progressions.slice().concat(Array.from({length: maxLevel - current.level},
+        const levels = progressions.slice().concat(Array.from({length: maxLevel - current.level + 2},
                                                               (_, i) => ({level: current.level + 1 + i})));
         const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort((a, b) => a - b));
         const hypotheticalSpeed = (document.getElementById("speed")?.value || 240) * 3600;
-        const hidePast = document.URL.includes("#hidePast");
+        const hidePast = document.getElementById("hidePast")?.checked;
+        const fools = document.getElementById("fools")?.checked;
         const time = stats.map(d => d.length && d.sort((a, b) => a[0] - b[0])[Math.ceil(d.length * 0.9) - 1][0]);
-        const expanded = levels.slice().reverse().find(p => parseInt(document.URL.split("#L")[1]) === p.level);
+        const expanded = document.getElementById("expand")?.checked &&
+              levels.slice().reverse().find(p => document.getElementById("expanded")?.value == p.level);
 
         let output = `<label for="speed">Hypothetical Speed (in hours):</label>
             <input type="number" id="speed" value="${hypotheticalSpeed / 3600}"><span id="buttons">
-            <button id="project">Project</button><br/>
-            <button id="past">Toggle Past Levels</button><br/>
+            <button id="project" class="project">Project</button><br/>
+            <input type="checkbox" id="expand" class="project" ${expanded ? "checked" : ""}>
             <label for="speed">Show Details for Level:</label>
-            <input type="number" id="expanded" value="${expanded?.level || current.level}">
-            <button id="detailed">Show Details</button><br/>
+            <input type="number" id="expanded" value="${expanded?.level || current.level}"><br/>
+            <input type="checkbox" id="hidePast" class="project" ${hidePast ? "checked" : ""}>
+            <label for="hidePast">Hide Past Levels</label><br/>
+            <input type="checkbox" id="fools" class="project" ${fools ? "checked" : ""}>
+            <label for="fools">Dark Blockchain</label><br/>
             </span><table class="coverage"><tbody><tr class="header"> ${expanded ?
             "<td>Kanji</td><td colspan=3>Fastest</td>" :
         "<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>"}</tr>`,
@@ -111,16 +115,27 @@
             if (level.unlocked_at) {
                 unlocked = new Date(level.unlocked_at);
                 info = `<td> ${unlocked.format()} </td><td> - </td><td> - </td>`;
-            } else {
+            } else if (level.level <= maxLevel) {
                 fastest = (fastest || new Date(now)).add(time[level.level - 1]);
                 real = getLater((real || new Date(unlocked)).add(medianSpeed), fastest);
                 given = getLater((given || new Date(unlocked)).add(hypotheticalSpeed), fastest);
-                info = `<td> ${real.format()} </td><td> ${fastest.format()} </td><td> ${given.format()} </td>`;
+                info = `<td> ${real.format()} </td><td> ${
+                (fools ? getFools(fastest) : fastest).format()} </td><td> ${given.format()} </td>`;
+            } else {
+                const _fastest = (new Date(fastest) || new Date(now)).add(time[level.level - 1]);
+                const _real = getLater((new Date(real) || new Date(unlocked)).
+                                       add(level.level === maxLevel + 2 ? time[level.level - 1] : medianSpeed),
+                                       fastest);
+                const _given = getLater((new Date(given) || new Date(unlocked)).
+                                        add(level.level === maxLevel + 2 ? time[level.level - 1] : hypotheticalSpeed),
+                                        fastest);
+                info = `<td> ${_real.format()} </td><td> ${
+                (fools ? getFools(_fastest) : _fastest).format()} </td><td> ${_given.format()} </td>`;
             }
 
             if (!expanded) {
-                output += `<tr ${level === current ?
-                    "class=\"current_level\"" : ""}><td> ${String("0" + level.level).slice(-2)} </td> ${info} </tr>`;
+                output += `<tr ${level === current ? "class=\"current_level\"" :
+                ""}><td> ${level.level === 62 ? "全火" : String("0" + level.level).slice(-2)} </td> ${info} </tr>`;
             } else if (expanded === level) {
                 for (const kanji of stats[expanded.level]) {
                     const date = (kanji[0] < 0 ? "Passed on " : "") + (new Date(fastest || now)).add(kanji[0]).format();
@@ -135,9 +150,7 @@
         if (!element.className.includes("chart")) element.className += " chart";
         element.innerHTML = output;
 
-        document.getElementById("project").onclick = project;
-        document.getElementById("past").onclick = set(document.URL.includes("#hidePast") ? "#" : "#hidePast");
-        document.getElementById("detailed").onclick = set("#L", "expanded");
+        Array.from(document.getElementsByClassName("project")).forEach(x => x.addEventListener("click", project));
 
         addGlobalStyle();
     }
@@ -162,14 +175,47 @@
             return (new Date(item.assignments.passed_at)).subtractDate(now);
         };
 
+        const burnTime = function(item) {
+            if (!item.assignments || !item.assignments.burned_at) {
+                let interval = item.assignments?.available_at ?
+                    Math.max(0, (new Date(item.assignments.available_at)).subtractDate(now)) : 0;
+                const srs = systems[item.data.spaced_repetition_system_id].data;
+                for (let stage = (item.assignments?.srs_stage || 0) + 1; stage < srs.burning_stage_position; stage++) {
+                    interval += srs.stages[stage].interval;
+                }
+                return interval;
+            }
+            return (new Date(item.assignments.burned_at)).subtractDate(now);
+        };
+
+        const radicalUnlock = function(radical, itemLevel, burn) {
+            return countComponent(radical.data.level, itemLevel) ? (burn ? burnTime(radical) : passTime(radical)) : 0;
+        };
+
+        const kanjiUnlock = function(kanji, itemLevel, burn) {
+            return countComponent(kanji.data.level, itemLevel) ? kanji.data.component_subject_ids.map(id => {
+                return Math.max(0, radicalUnlock(items.find(o => o.id === id), kanji.data.level));
+            }).reduce((a, b) => Math.max(a, b)) + (burn ? burnTime(kanji) : passTime(kanji)) : 0;
+        };
+
+        const vocabUnlock = function(vocab, itemLevel, burn) {
+            return vocab.data.component_subject_ids.map(id => {
+                return Math.max(0, kanjiUnlock(items.find(o => o.id === id), vocab.data.level));
+            }).reduce((a, b) => Math.max(a, b)) + (burn ? burnTime(vocab) : passTime(vocab));
+        };
+
         stats = Array.from(Array(maxLevel + 1), () => []);
         for (const item of items) {
             if (item.data.hidden_at || item.object !== "kanji") continue;
-            stats[item.data.level].push([item.data.component_subject_ids.map(id => {
-                const radical = items.find(o => o.id === id);
-                return countRadical(radical.data.level, item.data.level) ? Math.max(0, passTime(radical)) : 0;
-            }).reduce((a, b) => Math.max(a, b)) + passTime(item), item]);
+            stats[item.data.level].push([kanjiUnlock(item, item.data.level), item]);
         }
+
+        let burnStats = items.filter(item => !item.data.hidden_at).map(item => {
+            if (item.object === "radical") return radicalUnlock(item, item.data.level, true);
+            if (item.object === "kanji") return kanjiUnlock(item, item.data.level, true);
+            if (item.object === "vocabulary") return vocabUnlock(item, item.data.level, true);
+        });
+        stats.push([[burnStats.sort((a, b) => a - b)[burnStats.length - 1], burnStats]]);
 
         project();
     };
