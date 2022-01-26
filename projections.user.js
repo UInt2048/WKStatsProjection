@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.3.0
+// @version      1.3.1
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -45,12 +45,12 @@
             style.innerHTML = css.replace(/;/g, " !important;");
             head.appendChild(style);
         }
-    }
+    };
 
     const median = function median(arr) {
         const mid = Math.floor(arr.length / 2);
         return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
-    }
+    };
 
     const countComponent = function(componentLevel, itemLevel) {
         // For items in future levels, don't count passing time for components on preceding levels
@@ -59,46 +59,56 @@
 
     const levelDuration = function(level) {
         return new Date(level.passed_at || level.abandoned_at).subtractDate(new Date(level.unlocked_at));
-    }
+    };
 
     const getLater = function(a, b) {
         return new Date(Math.max(a, b));
-    }
+    };
 
     const getFools = function(date) {
         return new Date(date.getFullYear() + (date.getMonth() >= 3), 3, 1);
-    }
+    };
+
+    const get = function(a, b) {
+        return a && a[b];
+    };
+
+    const getID = function(a, b) {
+        return get(document.getElementById(a), b);
+    };
 
     Date.prototype.add = function(seconds) {
         return this.setTime(this.getTime() + (seconds*1000)) && this;
-    }
+    };
+
     Date.prototype.subtractDate = function(date) {
         return (this.getTime() - date.getTime()) / 1000;
-    }
+    };
+
     Date.prototype.format = function() {
         return new window.Intl.DateTimeFormat("default", {
             year: 'numeric', month: 'short', day: 'numeric',
             hour: 'numeric', minute: 'numeric', second: 'numeric'}).format(this);
-    }
+    };
 
     const project = function project() {
         const current = progressions[progressions.length - 1];
         const levels = progressions.slice().concat(Array.from({length: maxLevel - current.level + 2},
                                                               (_, i) => ({level: current.level + 1 + i})));
         const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort((a, b) => a - b));
-        const hypotheticalSpeed = (document.getElementById("speed")?.value || 240) * 3600;
-        const hidePast = document.getElementById("hidePast")?.checked;
-        const fools = document.getElementById("fools")?.checked;
+        const hypotheticalSpeed = (getID("speed", "value") || 240) * 3600;
+        const hidePast = getID("hidePast", "checked");
+        const fools = getID("fools", "checked");
         const time = stats.map(d => d.length && d.sort((a, b) => a[0] - b[0])[Math.ceil(d.length * 0.9) - 1][0]);
-        const expanded = document.getElementById("expand")?.checked &&
-              levels.slice().reverse().find(p => document.getElementById("expanded")?.value == p.level);
+        const expanded = getID("expand", "checked") &&
+              levels.slice().reverse().find(p => getID("expanded", "value") == p.level);
 
         let output = `<label for="speed">Hypothetical Speed (in hours):</label>
             <input type="number" id="speed" value="${hypotheticalSpeed / 3600}"><span id="buttons">
             <button id="project" class="project">Project</button><br/>
             <input type="checkbox" id="expand" class="project" ${expanded ? "checked" : ""}>
             <label for="speed">Show Details for Level:</label>
-            <input type="number" id="expanded" value="${expanded?.level || current.level}"><br/>
+            <input type="number" id="expanded" value="${get(expanded, "level") || current.level}"><br/>
             <input type="checkbox" id="hidePast" class="project" ${hidePast ? "checked" : ""}>
             <label for="hidePast">Hide Past Levels</label><br/>
             <input type="checkbox" id="fools" class="project" ${fools ? "checked" : ""}>
@@ -153,7 +163,7 @@
         Array.from(document.getElementsByClassName("project")).forEach(x => x.addEventListener("click", project));
 
         addGlobalStyle();
-    }
+    };
 
     const api = function api(userData, levels, systems, items) {
         if (progressions.length > 0) return project();
@@ -162,59 +172,34 @@
         progressions = Object.values(levels).map(level => level.data);
         now = new Date();
 
-        const passTime = function(item) {
-            if (!item.assignments || !item.assignments.passed_at) {
-                let interval = item.assignments?.available_at ?
+        const time = function(item, burn) {
+            if (!get(item.assignments, burn ? "burned_at" : "passed_at")) {
+                let interval = get(item.assignments, "available_at") ?
                     Math.max(0, (new Date(item.assignments.available_at)).subtractDate(now)) : 0;
                 const srs = systems[item.data.spaced_repetition_system_id].data;
-                for (let stage = (item.assignments?.srs_stage || 0) + 1; stage < srs.passing_stage_position; stage++) {
-                    interval += srs.stages[stage].interval;
+                const target = get(srs, burn ? "burning_stage_position" : "passing_stage_position");
+                for (let i = (get(item.assignments, "srs_stage") || 0) + 1; i < target; i++) {
+                    interval += srs.stages[i].interval;
                 }
                 return interval;
             }
-            return (new Date(item.assignments.passed_at)).subtractDate(now);
+            return (new Date(get(item.assignments, burn ? "burned_at" : "passed_at"))).subtractDate(now);
         };
 
-        const burnTime = function(item) {
-            if (!item.assignments || !item.assignments.burned_at) {
-                let interval = item.assignments?.available_at ?
-                    Math.max(0, (new Date(item.assignments.available_at)).subtractDate(now)) : 0;
-                const srs = systems[item.data.spaced_repetition_system_id].data;
-                for (let stage = (item.assignments?.srs_stage || 0) + 1; stage < srs.burning_stage_position; stage++) {
-                    interval += srs.stages[stage].interval;
-                }
-                return interval;
-            }
-            return (new Date(item.assignments.burned_at)).subtractDate(now);
-        };
-
-        const radicalUnlock = function(radical, itemLevel, burn) {
-            return countComponent(radical.data.level, itemLevel) ? (burn ? burnTime(radical) : passTime(radical)) : 0;
-        };
-
-        const kanjiUnlock = function(kanji, itemLevel, burn) {
-            return countComponent(kanji.data.level, itemLevel) ? kanji.data.component_subject_ids.map(id => {
-                return Math.max(0, radicalUnlock(items.find(o => o.id === id), kanji.data.level));
-            }).reduce((a, b) => Math.max(a, b)) + (burn ? burnTime(kanji) : passTime(kanji)) : 0;
-        };
-
-        const vocabUnlock = function(vocab, itemLevel, burn) {
-            return vocab.data.component_subject_ids.map(id => {
-                return Math.max(0, kanjiUnlock(items.find(o => o.id === id), vocab.data.level));
-            }).reduce((a, b) => Math.max(a, b)) + (burn ? burnTime(vocab) : passTime(vocab));
+        const unlock = function(item, itemLevel, burn) {
+            return countComponent(item.data.level, itemLevel) ?
+                (item.object === "radical" ? 0 : item.data.component_subject_ids.
+                 map(id => Math.max(0, unlock(items.find(o => o.id === id), item.data.level))).
+                 reduce((a, b) => Math.max(a, b))) + time(item, burn) : 0;
         };
 
         stats = Array.from(Array(maxLevel + 1), () => []);
         for (const item of items) {
             if (item.data.hidden_at || item.object !== "kanji") continue;
-            stats[item.data.level].push([kanjiUnlock(item, item.data.level), item]);
+            stats[item.data.level].push([unlock(item, item.data.level, false), item]);
         }
 
-        let burnStats = items.filter(item => !item.data.hidden_at).map(item => {
-            if (item.object === "radical") return radicalUnlock(item, item.data.level, true);
-            if (item.object === "kanji") return kanjiUnlock(item, item.data.level, true);
-            if (item.object === "vocabulary") return vocabUnlock(item, item.data.level, true);
-        });
+        let burnStats = items.filter(item => !item.data.hidden_at).map(item => unlock(item, item.data.level, true));
         stats.push([[burnStats.sort((a, b) => a - b)[burnStats.length - 1], burnStats]]);
 
         project();
