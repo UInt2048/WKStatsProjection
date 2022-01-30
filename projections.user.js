@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.3.1
+// @version      1.3.2
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -77,6 +77,29 @@
         return get(document.getElementById(a), b);
     };
 
+    const getHypothetical = function(fastest, isCurrent) {
+        const s = isCurrent ? "current" : fastest;
+        return getID("speed" + (getID("hypothetical", "checked") ? "-" + s : ""), "value") * 3600 || 864000;
+    }
+
+    const formatInterval = function(seconds) {
+        const days = seconds / 86400;
+        const hours = (days % 1) * 24;
+        const minutes = (hours % 1) * 60;
+        const secs = (minutes % 1) * 60;
+        return `${Math.floor(days)}d ${Math.floor(hours)}h ${Math.floor(minutes)}m ${Math.floor(secs)}s`;
+    };
+
+    const findLevel = function(levels, level) {
+        return levels.slice().reverse().find(p => level == p.level);
+    };
+
+    const rangeFormat = function(arr) {
+        return arr.map((n, i) => i < arr.length - 1 && arr[i + 1] - n === 1 ?
+                       `${i > 0 && n - arr[i - 1] === 1 ? "" : n}-` : `${n}, `
+        ).join("").replace(/-+/g, "-").slice(0, -2);
+    }
+
     Date.prototype.add = function(seconds) {
         return this.setTime(this.getTime() + (seconds*1000)) && this;
     };
@@ -96,24 +119,34 @@
         const levels = progressions.slice().concat(Array.from({length: maxLevel - current.level + 2},
                                                               (_, i) => ({level: current.level + 1 + i})));
         const medianSpeed = median(progressions.slice(0, -1).map(levelDuration).sort((a, b) => a - b));
-        const hypotheticalSpeed = (getID("speed", "value") || 240) * 3600;
         const hidePast = getID("hidePast", "checked");
         const fools = getID("fools", "checked");
+        const hypothetical = getID("hypothetical", "checked");
         const time = stats.map(d => d.length && d.sort((a, b) => a[0] - b[0])[Math.ceil(d.length * 0.9) - 1][0]);
-        const expanded = getID("expand", "checked") &&
-              levels.slice().reverse().find(p => getID("expanded", "value") == p.level);
+        const expanded = getID("expand", "checked") && findLevel(levels, getID("expanded", "value"));
+        const u = time.map((d, i) => {
+            const unlocked = get(findLevel(levels, i), "unlocked_at");
+            return [(unlocked ? now.subtractDate(new Date(unlocked)) : 0) + d, i];
+        });
 
-        let output = `<label for="speed">Hypothetical Speed (in hours):</label>
-            <input type="number" id="speed" value="${hypotheticalSpeed / 3600}"><span id="buttons">
-            <button id="project" class="project">Project</button><br/>
-            <input type="checkbox" id="expand" class="project" ${expanded ? "checked" : ""}>
+        let output = `<input type="checkbox" id="expand" class="project" ${expanded ? "checked" : ""}>
             <label for="speed">Show Details for Level:</label>
             <input type="number" id="expanded" value="${get(expanded, "level") || current.level}"><br/>
             <input type="checkbox" id="hidePast" class="project" ${hidePast ? "checked" : ""}>
             <label for="hidePast">Hide Past Levels</label><br/>
             <input type="checkbox" id="fools" class="project" ${fools ? "checked" : ""}>
             <label for="fools">Dark Blockchain</label><br/>
-            </span><table class="coverage"><tbody><tr class="header"> ${expanded ?
+            <input type="checkbox" id="hypothetical" class="project" ${hypothetical ? "checked" : ""}>
+            <label for="hypothetical">Expand Hypothetical</label><br/>
+            ${hypothetical ? Array.from(new Set(u.slice(current.level, -1).map(d => d[0]))).map((time, i) => {
+                const s = i === 0 ? "current" : time;
+                return `<label for="speed-${s}">Hypothetical Speed for fastest ${formatInterval(time)}
+                (levels ${rangeFormat(u.filter((d, i) => time === d[0]).map(d => d[1]))}):</label>
+                <input type="number" id="speed-${s}" value="${getHypothetical(time, i === 0) / 3600}">h<br/>`;
+            }).reduce((a, b) => a + b) : `<label for="speed">Hypothetical Speed:</label>
+            <input type="number" id="speed" value="${getHypothetical(time) / 3600}">h`}
+            <button id="project" class="project">Project</button><br/>
+            <table class="coverage"><tbody><tr class="header"> ${expanded ?
             "<td>Kanji</td><td colspan=3>Fastest</td>" :
         "<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>"}</tr>`,
             unlocked = new Date(now), real = null, fastest = null, given = null, currentReached = false, info = "";
@@ -128,7 +161,9 @@
             } else if (level.level <= maxLevel) {
                 fastest = (fastest || new Date(now)).add(time[level.level - 1]);
                 real = getLater((real || new Date(unlocked)).add(medianSpeed), fastest);
-                given = getLater((given || new Date(unlocked)).add(hypotheticalSpeed), fastest);
+                given = getLater((given || new Date(unlocked)).add(getHypothetical(time[level.level - 1],
+                                                                                   level.level === current.level + 1)),
+                                 fastest);
                 info = `<td> ${real.format()} </td><td> ${
                 (fools ? getFools(fastest) : fastest).format()} </td><td> ${given.format()} </td>`;
             } else {
@@ -137,7 +172,8 @@
                                        add(level.level === maxLevel + 2 ? time[level.level - 1] : medianSpeed),
                                        fastest);
                 const _given = getLater((new Date(given) || new Date(unlocked)).
-                                        add(level.level === maxLevel + 2 ? time[level.level - 1] : hypotheticalSpeed),
+                                        add(level.level === maxLevel + 2 ? time[level.level - 1] :
+                                            getHypothetical(time[level.level - 1], level.level === current.level + 1)),
                                         fastest);
                 info = `<td> ${_real.format()} </td><td> ${
                 (fools ? getFools(_fastest) : _fastest).format()} </td><td> ${_given.format()} </td>`;
