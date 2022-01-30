@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.3.2
+// @version      1.3.3
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -49,7 +49,7 @@
 
     const median = function median(arr) {
         const mid = Math.floor(arr.length / 2);
-        return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+        return arr.length === 0 ? 0 : arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
     };
 
     const countComponent = function(componentLevel, itemLevel) {
@@ -131,7 +131,7 @@
 
         let output = `<input type="checkbox" id="expand" class="project" ${expanded ? "checked" : ""}>
             <label for="speed">Show Details for Level:</label>
-            <input type="number" id="expanded" value="${get(expanded, "level") || current.level}"><br/>
+            <input type="number" id="expanded" size="3" value="${get(expanded, "level") || current.level}"><br/>
             <input type="checkbox" id="hidePast" class="project" ${hidePast ? "checked" : ""}>
             <label for="hidePast">Hide Past Levels</label><br/>
             <input type="checkbox" id="fools" class="project" ${fools ? "checked" : ""}>
@@ -142,9 +142,9 @@
                 const s = i === 0 ? "current" : time;
                 return `<label for="speed-${s}">Hypothetical Speed for fastest ${formatInterval(time)}
                 (levels ${rangeFormat(u.filter((d, i) => time === d[0]).map(d => d[1]))}):</label>
-                <input type="number" id="speed-${s}" value="${getHypothetical(time, i === 0) / 3600}">h<br/>`;
+                <input type="number" id="speed-${s}" size="4" value="${getHypothetical(time, i === 0) / 3600}">h<br/>`;
             }).reduce((a, b) => a + b) : `<label for="speed">Hypothetical Speed:</label>
-            <input type="number" id="speed" value="${getHypothetical(time) / 3600}">h`}
+            <input type="number" id="speed" size="4" value="${getHypothetical(time) / 3600}">h`}
             <button id="project" class="project">Project</button><br/>
             <table class="coverage"><tbody><tr class="header"> ${expanded ?
             "<td>Kanji</td><td colspan=3>Fastest</td>" :
@@ -180,8 +180,8 @@
             }
 
             if (!expanded) {
-                output += `<tr ${level === current ? "class=\"current_level\"" :
-                ""}><td> ${level.level === 62 ? "全火" : String("0" + level.level).slice(-2)} </td> ${info} </tr>`;
+                output += `<tr ${level === current ? "class=\"current_level\"" : ""}><td> ${
+                level.level === maxLevel + 2 ? "全火" : String("0" + level.level).slice(-2)} </td> ${info} </tr>`;
             } else if (expanded === level) {
                 for (const kanji of stats[expanded.level]) {
                     const date = (kanji[0] < 0 ? "Passed on " : "") + (new Date(fastest || now)).add(kanji[0]).format();
@@ -195,9 +195,7 @@
         const element = document.getElementsByClassName("projections")[0];
         if (!element.className.includes("chart")) element.className += " chart";
         element.innerHTML = output;
-
         Array.from(document.getElementsByClassName("project")).forEach(x => x.addEventListener("click", project));
-
         addGlobalStyle();
     };
 
