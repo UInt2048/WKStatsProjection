@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.3.3
+// @version      1.3.4
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -170,11 +170,11 @@
                 const _fastest = (new Date(fastest) || new Date(now)).add(time[level.level - 1]);
                 const _real = getLater((new Date(real) || new Date(unlocked)).
                                        add(level.level === maxLevel + 2 ? time[level.level - 1] : medianSpeed),
-                                       fastest);
+                                       _fastest);
                 const _given = getLater((new Date(given) || new Date(unlocked)).
                                         add(level.level === maxLevel + 2 ? time[level.level - 1] :
                                             getHypothetical(time[level.level - 1], level.level === current.level + 1)),
-                                        fastest);
+                                        _fastest);
                 info = `<td> ${_real.format()} </td><td> ${
                 (fools ? getFools(_fastest) : _fastest).format()} </td><td> ${_given.format()} </td>`;
             }
