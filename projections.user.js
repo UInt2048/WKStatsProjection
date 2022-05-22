@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.3.4
+// @version      1.3.5
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @include      https://www.wkstats.com/*
@@ -65,8 +65,8 @@
         return new Date(Math.max(a, b));
     };
 
-    const getFools = function(date) {
-        return new Date(date.getFullYear() + (date.getMonth() >= 3), 3, 1);
+    const getFools = function(date, fools) {
+        return fools ? new Date(date.getFullYear() + (date.getMonth() >= 3), 3, 1) : date;
     };
 
     const get = function(a, b) {
@@ -77,7 +77,7 @@
         return get(document.getElementById(a), b);
     };
 
-    const getHypothetical = function(fastest, isCurrent) {
+    const getHyp = function(fastest, isCurrent) {
         const s = isCurrent ? "current" : fastest;
         return getID("speed" + (getID("hypothetical", "checked") ? "-" + s : ""), "value") * 3600 || 864000;
     }
@@ -142,50 +142,50 @@
                 const s = i === 0 ? "current" : time;
                 return `<label for="speed-${s}">Hypothetical Speed for fastest ${formatInterval(time)}
                 (levels ${rangeFormat(u.filter((d, i) => time === d[0]).map(d => d[1]))}):</label>
-                <input type="number" id="speed-${s}" size="4" value="${getHypothetical(time, i === 0) / 3600}">h<br/>`;
+                <input type="number" id="speed-${s}" size="4" value="${getHyp(time, i === 0) / 3600}">h<br/>`;
             }).reduce((a, b) => a + b) : `<label for="speed">Hypothetical Speed:</label>
-            <input type="number" id="speed" size="4" value="${getHypothetical(time) / 3600}">h`}
+            <input type="number" id="speed" size="4" value="${getHyp(time) / 3600}">h`}
             <button id="project" class="project">Project</button><br/>
             <table class="coverage"><tbody><tr class="header"> ${expanded ?
             "<td>Kanji</td><td colspan=3>Fastest</td>" :
         "<td>Level </td><td> Real/Predicted </td><td> Fastest </td><td> Hypothetical</td>"}</tr>`,
-            unlocked = new Date(now), real = null, fastest = null, given = null, currentReached = false, info = "";
+            unlocked = new Date(now), currentReached = false, info = "",
+            real = null, fastest = null, given = null, p = [];
 
-        for (const level of levels) {
-            if (level === current) currentReached = true;
+        for (const i of levels) {
+            if (i === current) currentReached = true;
             if (hidePast && !currentReached) continue;
 
-            if (level.unlocked_at) {
-                unlocked = new Date(level.unlocked_at);
+            const l = i.level,
+                  _fastest = new Date(fastest || now).add(time[l - 1]),
+                  _real = getLater(new Date(real || unlocked).add(l === maxLevel + 2 ? time[l - 1] : medianSpeed),
+                                   _fastest),
+                  _given = getLater(new Date(given || unlocked).add(l === maxLevel + 2 ? time[l - 1] :
+                                                                    getHyp(time[l - 1], l === current.level + 1)),
+                                    _fastest);
+
+            if (i.unlocked_at) {
+                unlocked = new Date(i.unlocked_at);
                 info = `<td> ${unlocked.format()} </td><td> - </td><td> - </td>`;
-            } else if (level.level <= maxLevel) {
-                fastest = (fastest || new Date(now)).add(time[level.level - 1]);
-                real = getLater((real || new Date(unlocked)).add(medianSpeed), fastest);
-                given = getLater((given || new Date(unlocked)).add(getHypothetical(time[level.level - 1],
-                                                                                   level.level === current.level + 1)),
-                                 fastest);
-                info = `<td> ${real.format()} </td><td> ${
-                (fools ? getFools(fastest) : fastest).format()} </td><td> ${given.format()} </td>`;
+            } else if (l <= maxLevel) {
+                p[l] = {fastest: getFools(fastest = _fastest, fools).format(),
+                        real: (real = _real).format(),
+                        given: (given = _given).format()};
+                info = `<td> ${p[l].real} </td><td> ${p[l].fastest} </td><td> ${p[l].given} </td>`;
             } else {
-                const _fastest = (new Date(fastest) || new Date(now)).add(time[level.level - 1]);
-                const _real = getLater((new Date(real) || new Date(unlocked)).
-                                       add(level.level === maxLevel + 2 ? time[level.level - 1] : medianSpeed),
-                                       _fastest);
-                const _given = getLater((new Date(given) || new Date(unlocked)).
-                                        add(level.level === maxLevel + 2 ? time[level.level - 1] :
-                                            getHypothetical(time[level.level - 1], level.level === current.level + 1)),
-                                        _fastest);
-                info = `<td> ${_real.format()} </td><td> ${
-                (fools ? getFools(_fastest) : _fastest).format()} </td><td> ${_given.format()} </td>`;
+                p[l] = {fastest: getFools(_fastest, fools).format(),
+                        real: _real.format(),
+                        given: _given.format()};
+                info = `<td> ${p[l].real} </td><td> ${p[l].fastest} </td><td> ${p[l].given} </td>`;
             }
 
             if (!expanded) {
-                output += `<tr ${level === current ? "class=\"current_level\"" : ""}><td> ${
-                level.level === maxLevel + 2 ? "全火" : String("0" + level.level).slice(-2)} </td> ${info} </tr>`;
-            } else if (expanded === level) {
-                for (const kanji of stats[expanded.level]) {
-                    const date = (kanji[0] < 0 ? "Passed on " : "") + (new Date(fastest || now)).add(kanji[0]).format();
-                    output += `<tr><td>${kanji[1].data.characters}</td><td colspan=3>${date}</tr>`;
+                output += `<tr ${i === current ? "class=\"current_level\"" : ""}><td> ${
+                l === maxLevel + 2 ? "全火" : String("0" + l).slice(-2)} </td> ${info} </tr>`;
+            } else if (expanded === i) {
+                for (const kan of stats[expanded.level]) {
+                    const date = (kan[0] < 0 ? "Passed on " : "") + (new Date(fastest || now)).add(kan[0]).format();
+                    output += `<tr><td>${kan[1].data.characters}</td><td colspan=3>${date}</tr>`;
                 }
             }
         }
@@ -197,6 +197,8 @@
         element.innerHTML = output;
         Array.from(document.getElementsByClassName("project")).forEach(x => x.addEventListener("click", project));
         addGlobalStyle();
+
+        console.log(JSON.stringify(Object.assign({}, p)));
     };
 
     const api = function api(userData, levels, systems, items) {
