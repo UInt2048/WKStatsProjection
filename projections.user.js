@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.4.0
+// @version      1.4.1
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @match        https://www.wkstats.com/*
@@ -227,7 +227,7 @@
 
             const unlock = function(item, itemLevel, burn) {
                 return P.countComponent(item.data.level, itemLevel) ?
-                    (item.object === "radical" ? 0 : item.data.component_subject_ids.
+                    (item.object === "radical" || item.object === "kana_vocabulary" ? 0 : item.data.component_subject_ids.
                      map(id => Math.max(0, unlock(items.find(o => o.id === id), item.data.level))).
                      reduce((a, b) => Math.max(a, b))) + time(item, burn) : 0;
             };
