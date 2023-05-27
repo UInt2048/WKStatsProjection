@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         WKStats Projections Page
-// @version      1.4.0
+// @version      1.4.1
 // @description  Make a temporary projections page for WKStats
 // @author       UInt2048
 // @match        https://www.wkstats.com/*
